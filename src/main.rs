@@ -1,43 +1,56 @@
-#[allow(unused_imports)]
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+const BUILTINS: &[&str] = &["echo", "exit", "type"];
+
 fn main() {
+    let stdin = io::stdin();
     loop {
         print!("$ ");
         io::stdout().flush().unwrap();
-        let mut command = String::new();
-        io::stdin().read_line(&mut command).unwrap();
-        let command = command.trim();
-        if command == "exit" {
-            break;
-        } else if let Some(arg) = command.strip_prefix("echo ") {
-            println!("{}", arg);
-        } else if let Some(arg) = command.strip_prefix("type ") {
-            let arg = arg.trim();
-            if ["echo", "exit", "type"].contains(&arg) {
-                println!("{} is a shell builtin", arg);
-            } else if let Some(path) = find_in_path(arg) {
-                println!("{} is {}", arg, path.display());
-            } else {
-                println!("{}: not found", arg);
-            }
-        } else {
-            println!("{}: command not found", command);
+
+        let mut line = String::new();
+        if stdin.read_line(&mut line).unwrap() == 0 {
+            break; // EOF (Ctrl-D)
         }
+
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let (command, args) = match line.split_once(' ') {
+            Some((cmd, rest)) => (cmd, rest.trim()),
+            None => (line, ""),
+        };
+
+        match command {
+            "exit" => break,
+            "echo" => println!("{args}"),
+            "type" => type_builtin(args),
+            _ => println!("{line}: command not found"),
+        }
+    }
+}
+
+/// Implements the `type` builtin: identify whether `name` is a builtin,
+/// an executable found in `PATH`, or unknown.
+fn type_builtin(name: &str) {
+    if BUILTINS.contains(&name) {
+        println!("{name} is a shell builtin");
+    } else if let Some(path) = find_in_path(name) {
+        println!("{name} is {}", path.display());
+    } else {
+        println!("{name}: not found");
     }
 }
 
 /// Search each directory in `PATH` for an executable file named `name`.
 fn find_in_path(name: &str) -> Option<PathBuf> {
     let path_var = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path_var) {
-        let candidate = dir.join(name);
-        if is_executable(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
+    std::env::split_paths(&path_var)
+        .map(|dir| dir.join(name))
+        .find(|candidate| is_executable(candidate))
 }
 
 #[cfg(unix)]
